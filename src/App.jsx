@@ -13,6 +13,14 @@ const distanceKm=(a,b)=>{
  return 2*r*Math.asin(Math.sqrt(x));
 };
 
+function formatDuration(seconds){
+ if(!Number.isFinite(seconds))return "Calculando...";
+ const mins=Math.max(1,Math.round(seconds/60));
+ if(mins<60)return `${mins} min`;
+ const h=Math.floor(mins/60),m=mins%60;
+ return m?`${h} h ${m} min`:`${h} h`;
+}
+
 export default function App(){
  const params=new URLSearchParams(location.search);
  const initialCode=params.get("session")||"";
@@ -26,6 +34,10 @@ export default function App(){
  const [copied,setCopied]=useState(false);
  const [splash,setSplash]=useState(true);
  const [movement,setMovement]=useState({status:"waiting",delta:0});
+ const [travelMode,setTravelMode]=useState(()=>localStorage.getItem("bri_travel_mode")||"driving");
+ const [routeInfo,setRouteInfo]=useState(null);
+ const [panelCollapsed,setPanelCollapsed]=useState(false);
+ const autoCollapsed=useRef(false);
  const lastSync=useRef(0);
  const lastDistance=useRef(null);
  const {location:geo,error:geoError}=useGeolocation(!!session);
@@ -91,6 +103,14 @@ export default function App(){
  const km=distanceKm(me,other);
 
  useEffect(()=>{
+  if(other&&!autoCollapsed.current){
+   autoCollapsed.current=true;
+   setPanelCollapsed(true);
+  }
+  if(!other)autoCollapsed.current=false;
+ },[other]);
+
+ useEffect(()=>{
   if(km==null){
    lastDistance.current=null;
    setMovement({status:"waiting",delta:0});
@@ -115,6 +135,9 @@ export default function App(){
 
  const movementText=movement.status==="closer"?`Acercándote · ${Math.round(movement.delta)} m`:movement.status==="farther"?`Alejándote · ${Math.round(movement.delta)} m`:movement.status==="stable"?"Distancia estable":"Esperando movimiento";
  const movementIcon=movement.status==="closer"?"↘":movement.status==="farther"?"↗":"≈";
+ useEffect(()=>{localStorage.setItem("bri_travel_mode",travelMode)},[travelMode]);
+ const etaText=routeInfo?formatDuration(routeInfo.duration):"Calculando...";
+ const routeDistance=routeInfo?routeInfo.distance/1000:null;
  const share=session?`${location.origin}${location.pathname}?session=${session.code}`:"";
 
  async function copyShare(){
@@ -154,10 +177,24 @@ export default function App(){
    <div><span className="pulse"></span><b>Bri-Locations · {session.code}</b></div>
    <span>{Math.min(people.length,2)}/2</span>
   </header>
-  <LiveMap people={people} myDevice={myId}/>
-  <section className="bottom">
+  <LiveMap people={people} myDevice={myId} travelMode={travelMode} onRouteInfo={setRouteInfo}/>
+  {panelCollapsed?<section className="bottom bottom-collapsed">
+   <div className="compact-trip">
+    <div className="compact-main"><small>{travelMode==="walking"?"🚶 A pie":"🚗 Vehículo"}</small><b>{other?etaText:"Esperando..."}</b></div>
+    <div className="compact-distance"><small>Distancia</small><b>{routeDistance==null?(km==null?"--":km<1?`${Math.round(km*1000)} m`:`${km.toFixed(2)} km`):routeDistance<1?`${Math.round(routeDistance*1000)} m`:`${routeDistance.toFixed(2)} km`}</b></div>
+    <button type="button" className="panel-toggle panel-toggle-show" onClick={()=>setPanelCollapsed(false)} aria-label="Mostrar panel">⌃ <span>Mostrar</span></button>
+   </div>
+  </section>:<section className="bottom">
+   <button type="button" className="panel-toggle panel-toggle-hide" onClick={()=>setPanelCollapsed(true)} aria-label="Ocultar panel">⌄ <span>Ocultar panel</span></button>
+   <div className="trip-row">
+    <div className="mode-switch" role="group" aria-label="Modo de desplazamiento">
+     <button className={travelMode==="walking"?"active":""} onClick={()=>setTravelMode("walking")}>🚶 A pie</button>
+     <button className={travelMode==="driving"?"active":""} onClick={()=>setTravelMode("driving")}>🚗 Vehículo</button>
+    </div>
+    <div className="eta"><small>Tiempo estimado</small><b>{other?etaText:"Esperando..."}</b></div>
+   </div>
    <div className="stats">
-    <div><small>Distancia</small><b>{km==null?"Esperando...":km<1?`${Math.round(km*1000)} m`:`${km.toFixed(2)} km`}</b></div>
+    <div><small>Distancia por ruta</small><b>{routeDistance==null?(km==null?"Esperando...":km<1?`${Math.round(km*1000)} m`:`${km.toFixed(2)} km`):routeDistance<1?`${Math.round(routeDistance*1000)} m`:`${routeDistance.toFixed(2)} km`}</b></div>
     <div><small>GPS</small><b>{geo?`±${Math.round(geo.accuracy)} m`:"Buscando..."}</b></div>
    </div>
    {other&&<>
@@ -170,6 +207,6 @@ export default function App(){
     <button onClick={copyShare}>{copied?"¡Enlace copiado!":"Copiar enlace"}</button>
     <button className="danger" onClick={stop}>{host?"Finalizar":"Salir"}</button>
    </div>
-  </section>
+  </section>}
  </main>;
 }
